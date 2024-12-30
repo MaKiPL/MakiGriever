@@ -3,6 +3,9 @@ using UnityEngine;
 using UnityEditor.AssetImporters;
 using System.IO;
 
+//TODO
+//1. Proper shader, or at least set the params to specular =0 and no back-face cull (two sided)
+
 [ScriptedImporter(1,"texl")]
 public class TexlImporter : ScriptedImporter
 {
@@ -84,16 +87,25 @@ public class TexlImporter : ScriptedImporter
             for (int y = 0; y < height; y++)
             {
                 byte pixelColor = br.ReadByte();
-                int xIndex = (int)(x / 64.0); //0, 1, 2, 3
-                int yIndex = (int)(y / 64.0); //0, 1, 2, 3
-                int finalClutIndex = yIndex * 4 + xIndex; //=i.e x=128 and y=64 should point to index 4+2=6
-                textureColors[x + y * width] = clut[finalClutIndex][pixelColor];
+                int xIndex = (int)(y / 64.0); // Back to original
+                int yIndex = (int)(x / 64.0); // Back to original
+                int finalClutIndex = yIndex * 4 + xIndex;
+                // Try rotating clockwise by storing in a different order
+                textureColors[y + (width - 1 - x) * height] = clut[finalClutIndex][pixelColor];
             }
         
             sectorTexture.SetPixels(textureColors);
 
-            sectorTexture.Apply();
+            sectorTexture.name = $"Texl_{index}";
             
+            // Create a material for each texture
+            Material material = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            material.name = $"TexlMaterial_{index}";
+            material.mainTexture = sectorTexture;
+            
+            sectorTexture.Apply();
+            ctx.AddObjectToAsset($"texture_{index}", sectorTexture);
+            ctx.AddObjectToAsset($"material_{index}", material);
             textures[index] = sectorTexture;
         }
 
