@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor.AssetImporters;
 using System.IO;
+using System.Linq;
 
 
 //TODO:
@@ -25,6 +26,8 @@ public class WmxImporter : ScriptedImporter
         public Vector3[] vertices;
         public int[] triangles;
         public Vector2[] UVs;
+        public int[] TPageIndex;
+        public Texflags[] TexFlags;
     }
 
     private struct Polygon
@@ -36,7 +39,7 @@ public class WmxImporter : ScriptedImporter
         public byte U3, V3;
         public byte TPageClut;
         public byte GroundType;
-        public byte Unknown;
+        public byte TexFlag;
         public byte Unknown2;
 
         public byte TPage;
@@ -44,6 +47,19 @@ public class WmxImporter : ScriptedImporter
     }
 
     private const float SCALE = 256.0f;
+
+    [Flags]
+    public enum Texflags : byte
+    {
+        TEXFLAGS_SHADOW = 0b11,
+        TEXFLAGS_UNK = 0b100,
+        TEXFLAGS_ISENTERABLE = 0b00001000,
+        TEXFLAGS_TRANSPARENT = 0b00010000,
+        TEXFLAGS_ROAD = 0b00100000,
+        TEXFLAGS_WATER = 0b01000000,
+        TEXFLAGS_MISC = 0b10000000,
+        TEXFLAGS_NORMAL = 0b0
+    }
 
     private struct Vertex
     {
@@ -56,6 +72,8 @@ public class WmxImporter : ScriptedImporter
     {
         WmxSegment segment = new WmxSegment();
         uint currentPosition = (uint)br.BaseStream.Position;
+
+        int segmentId = (int)(currentPosition / WMX_SEGMENT_SIZE);
         
         uint blockId = br.ReadUInt32();
         uint[] blockOffsets = new uint[16];
@@ -64,6 +82,8 @@ public class WmxImporter : ScriptedImporter
         List<int> trianglesIncreasing = new List<int>();
         List<Vector3> verticesModel = new List<Vector3>();
         List<Vector2> uvsModel = new List<Vector2>();
+        List<int> TPages = new List<int>();
+        List<Texflags> TextureFlags = new List<Texflags>();
 
         for (int blockIndex = 0; blockIndex < 16; blockIndex++)
         {
@@ -84,7 +104,7 @@ public class WmxImporter : ScriptedImporter
                     U2 = br.ReadByte(), V2 = br.ReadByte(),
                     U3 = br.ReadByte(), V3 = br.ReadByte(),
                     TPageClut = br.ReadByte(), GroundType = br.ReadByte(),
-                    Unknown = br.ReadByte(), Unknown2 = br.ReadByte()
+                    TexFlag = br.ReadByte(), Unknown2 = br.ReadByte()
                 };
                 
                 polygons[polygonIndex].TPage = (byte)(polygons[polygonIndex].TPageClut >> 4);
@@ -104,6 +124,8 @@ public class WmxImporter : ScriptedImporter
             int blockYOffset = blockIndex / 4;
             float vertexXOffset = blockXOffset * 8.0f; //??
             float vertexYOffset = blockYOffset * -8.0f; //??
+
+
 
             for (int polygonIndex = 0; polygonIndex < polygonCount; polygonIndex++)
             {
@@ -132,6 +154,9 @@ public class WmxImporter : ScriptedImporter
                 uvsModel.Add(UV1);
                 uvsModel.Add(UV2);
                 uvsModel.Add(UV3);
+                
+                TPages.Add(polygons[polygonIndex].TPage);
+                TextureFlags.Add((Texflags)polygons[polygonIndex].TexFlag);
             }
         }
         
@@ -140,11 +165,13 @@ public class WmxImporter : ScriptedImporter
         segment.vertexCount = (ushort)verticesModel.Count;
         segment.triangleCount = (ushort)trianglesIncreasing.Count;
         segment.UVs = uvsModel.ToArray();
+        segment.TPageIndex = TPages.ToArray();
+        segment.TexFlags = TextureFlags.ToArray();
         return segment;
     }
 
     
-    private GameObject CreateSegmentMesh(WmxSegment segment, int index, AssetImportContext ctx)
+    private GameObject CreateSegmentMesh(WmxSegment segment, int index, AssetImportContext ctx, Material[] materials)
     {
         GameObject segmentObj = new GameObject($"Segment_{index}");
         
@@ -161,14 +188,63 @@ public class WmxImporter : ScriptedImporter
         {
             mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
         }
+        
+        // Group triangles by TPageIndex
+        Dictionary<int, List<int>> materialToTriangles = new Dictionary<int, List<int>>();
+    
+        // Each triangle consists of 3 indices
+        for (int i = 0; i < segment.triangles.Length; i += 3)
+        {
+            int tpageIndex = segment.TPageIndex[i/3]; // Assuming TPageIndex has one entry per triangle
+            switch (segment.TexFlags[i / 3])
+            {
+                case Texflags.TEXFLAGS_WATER:
+                    tpageIndex = 20;
+                    break;
+                case Texflags.TEXFLAGS_ROAD:
+                    tpageIndex = 21;
+                    break;
+                // case Texflags.TEXFLAGS_MISC:
+                //     tpageIndex = 22;
+                //     break;
+                case Texflags.TEXFLAGS_NORMAL:
+                default:
+                    break;
+            }
+            
+        
+            if (!materialToTriangles.ContainsKey(tpageIndex))
+            {
+                materialToTriangles[tpageIndex] = new List<int>();
+            }
+        
+            // Add the three vertices of this triangle
+            materialToTriangles[tpageIndex].Add(segment.triangles[i]);
+            materialToTriangles[tpageIndex].Add(segment.triangles[i + 1]);
+            materialToTriangles[tpageIndex].Add(segment.triangles[i + 2]);
+        }
+
 
         // Set mesh data
         Debug.Log($"Setting up mesh data for segment {index}... Vertices: {segment.vertices.Length}, Triangles: {segment.triangles.Length}");
         mesh.SetVertices(segment.vertices);
-        mesh.SetTriangles(segment.triangles, 0);
         mesh.SetUVs(0, segment.UVs);
         // mesh.vertices = segment.vertices;
         // mesh.triangles = segment.triangles;
+        
+        // Set submeshes
+        mesh.subMeshCount = materialToTriangles.Count;
+        int submeshIndex = 0;
+        Material[] thisMaterials = new Material[materialToTriangles.Count];
+        
+        foreach (var kvp in materialToTriangles)
+        {
+            mesh.SetTriangles(kvp.Value.ToArray(), submeshIndex);
+            thisMaterials[submeshIndex] = materials[kvp.Key];
+            submeshIndex++;
+        }
+        
+        //mesh.SetTriangles(segment.triangles, 0);
         
         // Recalculate mesh properties
         mesh.RecalculateNormals();
@@ -179,17 +255,31 @@ public class WmxImporter : ScriptedImporter
 
         // Assign mesh to filter
         meshFilter.sharedMesh = mesh;
+        meshRenderer.sharedMaterials = thisMaterials;
         //meshFilter.mesh = mesh;
 
         // Create default material
-        Material material = new Material(Shader.Find("Standard"));
-        meshRenderer.sharedMaterial = material;
         
         ctx.AddObjectToAsset($"mesh_{index}", mesh);
-        ctx.AddObjectToAsset($"material_{index}", material);
 
         return segmentObj;
     }
+
+    private static Dictionary<int, int> interZoneMap = new Dictionary<int, int>
+    {
+        {361, 834},
+        {327, 829},
+        {274,827},
+        {275,828},
+        {267,826},
+        {149,824},
+        {150,825},
+        {214,830},
+        {215,831},
+        {246,832},
+        {247,833},
+        
+    };
     
     public override void OnImportAsset(AssetImportContext ctx)
     {
@@ -204,17 +294,61 @@ public class WmxImporter : ScriptedImporter
 
         const int GRID_WIDTH = 32;
         const int GRID_HEIGHT = 24;
+        
+        string texlPath = Directory.GetFiles(Path.GetDirectoryName(ctx.assetPath) ?? string.Empty, "*texl*").First();
+        Texture2D[] texls = Texl.ReadTexl(texlPath);
+        
+        
+        Material[] materials = new Material[texls.Length + 3]; //ocean, road, misc
+        for (int i = 0; i < texls.Length; i++)
+        {
+            materials[i] = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            materials[i].name = $"Material_{i}";
+            materials[i].SetTexture("_BaseMap", texls[i]);
+            materials[i].SetFloat("_Smoothness", 0.0f);
+            materials[i].SetFloat("_AlphaClip", 1.0f);
+            ctx.AddObjectToAsset($"texl_{i}", texls[i]);
+            ctx.AddObjectToAsset($"material_{i}", materials[i]);
+        }
+
+        int materialIndex = texls.Length;
+        //Ocean
+        materials[materialIndex] = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+        materials[materialIndex].name = $"Material_{texls.Length}_ocean";
+        materials[materialIndex].SetFloat("_Smoothness", 0.0f);
+        ctx.AddObjectToAsset($"material_{materialIndex}", materials[materialIndex]);
+
+        materialIndex++;
+        //Road
+        materials[materialIndex] = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+        materials[materialIndex].name = $"Material_{materialIndex}_road";
+        materials[materialIndex].SetFloat("_Smoothness", 0.0f);
+        ctx.AddObjectToAsset($"material_{materialIndex}", materials[materialIndex]);
+
+        materialIndex++;
+        //Misc
+        materials[materialIndex] = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+        materials[materialIndex].name = $"Material_{materialIndex}_misc";
+        materials[materialIndex].SetFloat("_Smoothness", 0.0f);
+        ctx.AddObjectToAsset($"material_{materialIndex}", materials[materialIndex]);
+        
 
         // Read all segments
         for (int i = 0; i < WMX_SEGMENTS; i++)
         {
-            fs.Seek(WMX_SEGMENT_SIZE*i, SeekOrigin.Begin);
+            int baseInterZone = i;
+            if (interZoneMap.TryGetValue(i, out int interZone))
+                baseInterZone = interZone;
+
+            fs.Seek(WMX_SEGMENT_SIZE*baseInterZone, SeekOrigin.Begin);
             segments[i] = ReadSegment(br);
             
             // Create segment mesh if it contains data
             if (segments[i].vertexCount > 0)
             {
-                GameObject segmentObj = CreateSegmentMesh(segments[i], i, ctx);
+                GameObject segmentObj = CreateSegmentMesh(segments[i], i, ctx, materials);
+                //var mr = segmentObj.GetComponent<MeshRenderer>();
+                //mr.material = materials[segments[i].TPageIndex[0]];
                 segmentObj.transform.parent = root.transform;
                 if (i < WM_REAL_SEGMENTS)
                 {
