@@ -14,3 +14,6 @@ Unity: **Unity 6 (6000.0.32f1)**
 
   
 **See attached samples in SampleAssets - there are original, renamed files**
+
+# Working scenes
+1. Scenes/WorldMap.unity: ![wmx](https://raw.githubusercontent.com/MaKiPL/MakiGriever/refs/heads/master/screenshot1.jpg)
