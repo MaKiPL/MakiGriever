@@ -147,16 +147,24 @@ public class WmxImporter : ScriptedImporter
                 Vector2 UV2 = new Vector2(polygons[polygonIndex].U2 / 255.0f, polygons[polygonIndex].V2 / 255.0f);
                 Vector2 UV3 = new Vector2(polygons[polygonIndex].U3 / 255.0f, polygons[polygonIndex].V3 / 255.0f);
 
+                TextureFlags.Add((Texflags)polygons[polygonIndex].TexFlag);
+                
                 UV1.y = 1.0f - UV1.y;
                 UV2.y = 1.0f - UV2.y;
                 UV3.y = 1.0f - UV3.y;
+
+                if (TextureFlags.Last().HasFlag(Texflags.TEXFLAGS_ROAD))
+                {
+                    UV1 -= new Vector2(0f, 0.002f);
+                    UV2 -= new Vector2(0f, 0.002f);
+                    UV3 -= new Vector2(0f, 0.002f);
+                }
                 
                 uvsModel.Add(UV1);
                 uvsModel.Add(UV2);
                 uvsModel.Add(UV3);
                 
                 TPages.Add(polygons[polygonIndex].TPage);
-                TextureFlags.Add((Texflags)polygons[polygonIndex].TexFlag);
             }
         }
         
@@ -196,21 +204,11 @@ public class WmxImporter : ScriptedImporter
         for (int i = 0; i < segment.triangles.Length; i += 3)
         {
             int tpageIndex = segment.TPageIndex[i/3]; // Assuming TPageIndex has one entry per triangle
-            switch (segment.TexFlags[i / 3])
-            {
-                case Texflags.TEXFLAGS_WATER:
-                    tpageIndex = 20;
-                    break;
-                case Texflags.TEXFLAGS_ROAD:
-                    tpageIndex = 21;
-                    break;
-                // case Texflags.TEXFLAGS_MISC:
-                //     tpageIndex = 22;
-                //     break;
-                case Texflags.TEXFLAGS_NORMAL:
-                default:
-                    break;
-            }
+            if (segment.TexFlags[i / 3].HasFlag(Texflags.TEXFLAGS_WATER))
+                tpageIndex = 20;
+            if (segment.TexFlags[i / 3].HasFlag(Texflags.TEXFLAGS_ROAD))
+                tpageIndex = 21;
+            
             
         
             if (!materialToTriangles.ContainsKey(tpageIndex))
