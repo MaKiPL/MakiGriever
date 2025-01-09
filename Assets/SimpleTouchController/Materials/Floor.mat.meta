@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 4dafae64b178e7e4e927c1117149993d
+timeCreated: 1476873838
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 74107
+  packageName: Simple Touch Controller
+  packageVersion: 1.2
+  assetPath: Assets/SimpleTouchController/Materials/Floor.mat
+  uploadId: 238742

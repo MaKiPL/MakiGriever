@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 05d3bc90123a27648b9f0a8a5ff39ba8
+timeCreated: 1481625851
+licenseType: Store
+TextScriptImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 74107
+  packageName: Simple Touch Controller
+  packageVersion: 1.2
+  assetPath: Assets/SimpleTouchController/README.txt
+  uploadId: 238742

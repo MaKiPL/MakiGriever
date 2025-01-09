@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: c9ccb15a2115747489913cc3f7e6874c
+timeCreated: 1476873838
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 74107
+  packageName: Simple Touch Controller
+  packageVersion: 1.2
+  assetPath: Assets/SimpleTouchController/Materials/Walls.mat
+  uploadId: 238742

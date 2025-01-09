@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 85d470a1871a6894888eae4395fb545f
+timeCreated: 1476802954
+licenseType: Store
+DefaultImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 74107
+  packageName: Simple Touch Controller
+  packageVersion: 1.2
+  assetPath: Assets/SimpleTouchController/Scenes/Example1.unity
+  uploadId: 238742
