@@ -26,11 +26,10 @@ public static class Texl
             for(int x = 0; x < tim.Width; x++)
             for (int y = 0; y < tim.Height; y++)
             {
-                byte pixelColor = tim.RawImageData[x + y * tim.Width];
+                byte pixelColor = tim.RawImageData[y + (tim.Width - 1 - x) * tim.Height];
                 int xIndex = (int)(y / 64.0); // Back to original
                 int yIndex = (int)(x / 64.0); // Back to original
                 int finalClutIndex = yIndex * 4 + xIndex;
-                // Try rotating clockwise by storing in a different order
                 textureColors[y + (tim.Width - 1 - x) * tim.Height] = tim.Cluts[finalClutIndex][pixelColor];
             }
         

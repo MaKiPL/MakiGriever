@@ -90,7 +90,17 @@ private uint GetCameraPointer(int scenario)
         uint group4Model = (uint)(br.ReadUInt32() + modelPointer);
         uint texturePointer = (uint)(br.ReadUInt32() + modelPointer);
         
+        Debug.Log($"Texture pointer: 0x{texturePointer:X8}");
+        
         //parse group 1
+        fs.Seek(texturePointer, SeekOrigin.Begin);
+        TimTexture tim = new TimTexture();
+        tim.Parse(br);
+        for (int clutIndex = 0; clutIndex < tim.Cluts.Length; clutIndex++)
+        {
+            Texture2D clutTexture = tim.CreateTexture(clutIndex);
+            ctx.AddObjectToAsset($"{battleStageName}_{clutIndex}", clutTexture);
+        }
     }
     
 }

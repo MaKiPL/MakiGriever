@@ -54,11 +54,12 @@ public class TimTexture
 
         // Read image data
         RawImageData = new byte[Width * Height];
-        for (int x = 0; x < Width; x++)
         for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
         {
             byte pixelColor = br.ReadByte();
-            RawImageData[x+y*Width] = pixelColor;
+            int destIndex = x + (Height - 1 - y) * Width;
+            RawImageData[destIndex] = pixelColor;
         }
     }
 
@@ -78,5 +79,31 @@ public class TimTexture
         byte a = (byte)((r == 0 && g == 0 && b == 0) ? 0 : 255);
 
         return new Color(r / 255f, g / 255f, b / 255f, a / 255f);
+    }
+
+
+    public Texture2D CreateTexture(int clutIndex = 0)
+    {
+        Texture2D texture = new Texture2D(Width, Height, TextureFormat.RGBA32, false, false);
+        Color[] colors = new Color[Width * Height];
+        
+        for (int y = 0; y < Height; y++)
+        {
+            for (int x = 0; x < Width; x++)
+            {
+                int sourceIndex = x + y * Width;
+                byte colorIndex = RawImageData[sourceIndex];
+                
+                if (clutIndex < Cluts.Length && colorIndex < Cluts[clutIndex].Length)
+                {
+                    colors[sourceIndex] = Cluts[clutIndex][colorIndex];
+                }
+            }
+        }
+
+        texture.SetPixels(colors);
+        texture.filterMode = FilterMode.Point;
+        texture.Apply();
+        return texture;
     }
 }
