@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
 using PlasticGui.WorkspaceWindow.BranchExplorer;
@@ -54,6 +55,7 @@ private uint GetCameraPointer(int scenario)
 }
 
 private const float SCALE = 2048.0f;
+private List<Material> materials;
 
 struct GroupSegment
 {
@@ -65,9 +67,9 @@ struct GroupSegment
 
 private Vector3 ReadVertex(BinaryReader br)
 {
-    ushort x = br.ReadUInt16();
-    ushort y = br.ReadUInt16();
-    ushort z = br.ReadUInt16();
+    short x = br.ReadInt16();
+    short y = br.ReadInt16();
+    short z = br.ReadInt16();
     
     return new Vector3(x / SCALE, y / SCALE, z / SCALE);
 }
@@ -87,8 +89,13 @@ Vector2 TimTextureResolution;
 
 private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
 {
-    float U = (float)UVbyte.Item1 / (float)(TimTextureResolution.x * 2) + (float)tPageOffset/(TimTextureResolution.x * 2);
-    float V = UVbyte.Item2 / 255.0f; //(float)UVbyte.Item2 / (float)(TimTextureResolution.y * 2) + (float)tPageOffset/(TimTextureResolution.y * 2);
+    const float texPageWidth = 128.0f;
+    //float U = (float)UVbyte.Item1 / (float)(TimTextureResolution.x * 2) + (float)tPageOffset/(TimTextureResolution.x * 2);
+    //float U = UVbyte.Item1 / (texPageWidth * 2);
+    //float V = UVbyte.Item2 / 255.0f; //(float)UVbyte.Item2 / (float)(TimTextureResolution.y * 2) + (float)tPageOffset/(TimTextureResolution.y * 2);
+
+    float U = (UVbyte.Item1 + tPageOffset * texPageWidth)/TimTextureResolution.x;
+    float V = UVbyte.Item2 / TimTextureResolution.y;
     return new Vector2(U, V);
 }
 
@@ -107,7 +114,7 @@ private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
         }
         
         uint[] objectPointers = new uint[objectCount];
-        for (int i = 0; i < objectCount; i++) objectPointers[i] = br.ReadUInt32();
+        for (int i = 0; i < objectCount; i++) objectPointers[i] = objectListPointer + br.ReadUInt32();
 
         GroupSegment[] groups = new GroupSegment[objectCount];
         for (int i = 0; i < objectCount; i++)
@@ -115,9 +122,9 @@ private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
             br.BaseStream.Seek(objectPointers[i], SeekOrigin.Begin);
             
             uint header = br.ReadUInt32();
-            if (header != 0x01000100)
+            if (header != 0x00010001)
             {
-                Debug.LogWarning($"Invalid object header at 0x{objectPointers[i]:X8}. Skipping...");
+                Debug.LogWarning($"Invalid object header={header:X8} at 0x{objectPointers[i]:X8}. Skipping...");
                 continue;
             }
             
@@ -139,6 +146,8 @@ private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
             br.BaseStream.Seek(4, SeekOrigin.Current);
 
             segment.clutIds = new List<int>();
+            segment.indices = new List<int>();
+            segment.uvs = new List<Vector2>();
 
             for (int n = 0; n < triangleCount; n++)
             {
@@ -156,11 +165,11 @@ private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
                 
                 byte TPage = (byte)(br.ReadByte() & 0b1111);
 
-                int tPagePixelOffset = TPage * 64; //because 64px per TPage
+                int tPagePixelOffset = TPage; //because 64px per TPage
                 
-                segment.uvs.Add(TweakUV(UV1, tPagePixelOffset));
                 segment.uvs.Add(TweakUV(UV2, tPagePixelOffset));
                 segment.uvs.Add(TweakUV(UV3, tPagePixelOffset));
+                segment.uvs.Add(TweakUV(UV1, tPagePixelOffset));
                 
                 segment.clutIds.Add(clutId);
 
@@ -189,7 +198,7 @@ private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
                 Tuple<byte, byte> UV2 = ReadUV(br);
                 
                 byte TPage = (byte)(br.ReadByte() & 0b1111);
-                int tPagePixelOffset = TPage * 64; //because 64px per TPage
+                int tPagePixelOffset = TPage;
                 
                 byte hide = br.ReadByte(); //skip
                 
@@ -202,8 +211,8 @@ private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
                 segment.uvs.Add(TweakUV(UV4, tPagePixelOffset));
                 
                 segment.uvs.Add(TweakUV(UV1, tPagePixelOffset));
-                segment.uvs.Add(TweakUV(UV3, tPagePixelOffset));
                 segment.uvs.Add(TweakUV(UV4, tPagePixelOffset));
+                segment.uvs.Add(TweakUV(UV3, tPagePixelOffset));
 
                 br.BaseStream.Seek(4, SeekOrigin.Current); //RGB + GPU
             }
@@ -214,7 +223,7 @@ private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
         return groups;
     }
 
-    GameObject CreateGameObject(string goName, GroupSegment[] groups)
+    GameObject CreateGameObject(string goName, GroupSegment[] groups, AssetImportContext ctx)
     {
         if (groups == null || groups.Length == 0)
             return null;
@@ -228,12 +237,45 @@ private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
         MeshRenderer meshRenderer = go.AddComponent<MeshRenderer>();
         Mesh mesh = new Mesh();
         
+        
+        List<Vector3> vertices = new List<Vector3>();
+        List<int> indices = new List<int>();
+        List<Vector2> uvs = new List<Vector2>();
+
+        int polyIndex = 0;
         foreach (GroupSegment group in groups)
         {
-            
+            Debug.Log($"group {group.vertices.Count} uvs: {group.uvs.Count} indices: {group.indices.Count}");
+            foreach (int index in group.indices)
+            {
+                vertices.Add(group.vertices[index]);
+                uvs.Add(group.uvs[index]);
+                indices.Add(polyIndex);
+                polyIndex++;
+            }
+
+        // Debug.Log($"group vertices: {group.vertices.Count}, triangles: {group.indices.Count}");
+        //     //vertices.AddRange(group.vertices);
+        //     uvs.AddRange(group.uvs);
+        //     indices.AddRange(group.indices);
+        //     vertices.AddRange(group.indices.Select(index => group.vertices[index]));
         }
+        
+        mesh.SetVertices(vertices);
+        mesh.SetTriangles(indices, 0);
+        mesh.SetUVs(0, uvs);
+        
+        mesh.name = $"{goName}_Mesh";
+        
+        mesh.RecalculateNormals();
+        mesh.RecalculateTangents();
+        mesh.RecalculateBounds();
+        
+        
+        ctx.AddObjectToAsset(mesh.name, mesh);
 
         meshFilter.sharedMesh = mesh;
+        
         return go;
     }
 
@@ -294,7 +336,7 @@ private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
             return;
         }
         
-        List<Material> materials = new List<Material>();
+        materials = new List<Material>();
         for (int clutIndex = 0; clutIndex < tim.Cluts.Length; clutIndex++)
         {
             Texture2D clutTexture = tim.CreateTexture(clutIndex);
@@ -308,6 +350,8 @@ private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
             material.SetTexture("_BaseMap", clutTexture);
             material.SetFloat("_Smoothness", 0.0f);
             material.SetFloat("_AlphaClip", 1.0f);
+            material.SetFloat("_Cull", 0.0f);
+            
             ctx.AddObjectToAsset(material.name, material);
             materials.Add(material);
         }
@@ -316,16 +360,50 @@ private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
         GroupSegment[] Group2 = ReadGroup(group2Model, br);
         GroupSegment[] Group3 = ReadGroup(group3Model, br);
         GroupSegment[] Group4 = ReadGroup(group4Model, br);
-
-
-        GameObject group1Object = CreateGameObject($"{battleStageName}_group1", Group1);
-        GameObject group2Object = CreateGameObject($"{battleStageName}_group2", Group2);
-        GameObject group3Object = CreateGameObject($"{battleStageName}_group3", Group3);
-        GameObject group4Object = CreateGameObject($"{battleStageName}_group4", Group4);
-        if(group1Object != null) ctx.AddObjectToAsset(group1Object.name, group1Object);
-        if(group2Object != null) ctx.AddObjectToAsset(group2Object.name, group2Object);
-        if(group3Object!= null) ctx.AddObjectToAsset(group3Object.name, group3Object);
-        if(group4Object!= null) ctx.AddObjectToAsset(group4Object.name, group4Object);
+        
+        
+        GameObject group1Object = CreateGameObject($"{battleStageName}_group1", Group1, ctx);
+        GameObject group2Object = CreateGameObject($"{battleStageName}_group2", Group2, ctx);
+        GameObject group3Object = CreateGameObject($"{battleStageName}_group3", Group3, ctx);
+        GameObject group4Object = CreateGameObject($"{battleStageName}_group4", Group4, ctx);
+        
+        GameObject combinedObject = new GameObject($"{battleStageName}_combined");
+        MeshFilter combinedMeshFilter = combinedObject.AddComponent<MeshFilter>();
+        MeshRenderer combinedMeshRenderer = combinedObject.AddComponent<MeshRenderer>();
+        List<CombineInstance> combineInstances = new List<CombineInstance>();
+        if(group1Object != null)
+        {
+            ctx.AddObjectToAsset(group1Object.name, group1Object);
+            combineInstances.Add(new CombineInstance { mesh = group1Object.GetComponent<MeshFilter>().sharedMesh, transform = group1Object.transform.localToWorldMatrix });
+        }
+        if(group2Object != null)
+        {
+            ctx.AddObjectToAsset(group2Object.name, group2Object);
+            combineInstances.Add(new CombineInstance { mesh = group2Object.GetComponent<MeshFilter>().sharedMesh, transform = group2Object.transform.localToWorldMatrix });
+        }
+        if(group3Object!= null)
+        {
+            ctx.AddObjectToAsset(group3Object.name, group3Object);
+            combineInstances.Add(new CombineInstance { mesh = group3Object.GetComponent<MeshFilter>().sharedMesh, transform = group3Object.transform.localToWorldMatrix });
+        }
+        if(group4Object!= null)
+        {
+            ctx.AddObjectToAsset(group4Object.name, group4Object);
+            combineInstances.Add(new CombineInstance { mesh = group4Object.GetComponent<MeshFilter>().sharedMesh, transform = group4Object.transform.localToWorldMatrix });
+        }
+        
+        combinedObject.transform.position = Vector3.zero;
+        combinedObject.transform.rotation = Quaternion.identity;
+        combinedObject.transform.localScale = Vector3.one;
+        
+        combinedMeshFilter.sharedMesh = new Mesh();
+        combinedMeshFilter.sharedMesh.name = combinedObject.name+"Mesh";
+        combinedMeshFilter.sharedMesh.CombineMeshes(combineInstances.ToArray(), true);
+        combinedMeshRenderer.sharedMaterials = materials.ToArray();
+        
+        ctx.AddObjectToAsset(combinedMeshFilter.sharedMesh.name, combinedMeshFilter.sharedMesh);
+        ctx.AddObjectToAsset(combinedObject.name, combinedObject);
+        ctx.SetMainObject(combinedObject);
     }
     
 }
