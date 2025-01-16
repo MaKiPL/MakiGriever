@@ -9,14 +9,14 @@ public class TimTexture
     public int Width { get; private set; }
     public int Height { get; private set; }
 
-    public void Parse(BinaryReader br)
+    public bool Parse(BinaryReader br)
     {
         // Validate TIM header
         uint magic = br.ReadUInt32();
         if (magic != 16) //0x10000000
         {
             Debug.LogError($"Invalid TIM header. Expected 0x10000000, got {magic}");
-            return;
+            return false;
         }
 
         // Validate BPP
@@ -24,7 +24,7 @@ public class TimTexture
         if (bpp != 0x09)
         {
             Debug.LogError($"Unsupported TIM format. Expected 0x09, got {bpp}");
-            return;
+            return false;
         }
 
         // Read CLUT section
@@ -61,6 +61,8 @@ public class TimTexture
             int destIndex = x + (Height - 1 - y) * Width;
             RawImageData[destIndex] = pixelColor;
         }
+
+        return true;
     }
 
     private static Color ReadPsxColor(ushort pixelColor)
