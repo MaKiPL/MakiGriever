@@ -90,13 +90,9 @@ Vector2 TimTextureResolution;
 private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
 {
     const float texPageWidth = 128.0f;
-    //float U = (float)UVbyte.Item1 / (float)(TimTextureResolution.x * 2) + (float)tPageOffset/(TimTextureResolution.x * 2);
-    //float U = UVbyte.Item1 / (texPageWidth * 2);
-    //float V = UVbyte.Item2 / 255.0f; //(float)UVbyte.Item2 / (float)(TimTextureResolution.y * 2) + (float)tPageOffset/(TimTextureResolution.y * 2);
-
-    float U = (UVbyte.Item1 + tPageOffset * texPageWidth)/TimTextureResolution.x;
+    float U = (UVbyte.Item1 + tPageOffset * texPageWidth) / TimTextureResolution.x;
     float V = UVbyte.Item2 / TimTextureResolution.y;
-    return new Vector2(U, V);
+    return new Vector2(U, 1.0f-V);
 }
 
     private GroupSegment[] ReadGroup(uint offset, BinaryReader br)
@@ -167,9 +163,9 @@ private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
 
                 int tPagePixelOffset = TPage; //because 64px per TPage
                 
+                segment.uvs.Add(TweakUV(UV1, tPagePixelOffset));
                 segment.uvs.Add(TweakUV(UV2, tPagePixelOffset));
                 segment.uvs.Add(TweakUV(UV3, tPagePixelOffset));
-                segment.uvs.Add(TweakUV(UV1, tPagePixelOffset));
                 
                 segment.clutIds.Add(clutId);
 
@@ -188,9 +184,9 @@ private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
                 segment.indices.Add(B);
                 segment.indices.Add(D);
                 
-                segment.indices.Add(A);
-                segment.indices.Add(C);
                 segment.indices.Add(D);
+                segment.indices.Add(C);
+                segment.indices.Add(A);
                 
                 Tuple<byte,byte> UV1 = ReadUV(br);
                 byte clutId = GetClutID(br);
@@ -210,9 +206,9 @@ private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
                 segment.uvs.Add(TweakUV(UV2, tPagePixelOffset));
                 segment.uvs.Add(TweakUV(UV4, tPagePixelOffset));
                 
-                segment.uvs.Add(TweakUV(UV1, tPagePixelOffset));
                 segment.uvs.Add(TweakUV(UV4, tPagePixelOffset));
                 segment.uvs.Add(TweakUV(UV3, tPagePixelOffset));
+                segment.uvs.Add(TweakUV(UV1, tPagePixelOffset));
 
                 br.BaseStream.Seek(4, SeekOrigin.Current); //RGB + GPU
             }
@@ -245,25 +241,23 @@ private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
         int polyIndex = 0;
         foreach (GroupSegment group in groups)
         {
+            if(group.vertices == null || group.indices == null)
+                continue;
+            int localUvPointer = 0;
             Debug.Log($"group {group.vertices.Count} uvs: {group.uvs.Count} indices: {group.indices.Count}");
             foreach (int index in group.indices)
             {
                 vertices.Add(group.vertices[index]);
-                uvs.Add(group.uvs[index]);
+                uvs.Add(group.uvs[localUvPointer++]);
                 indices.Add(polyIndex);
                 polyIndex++;
             }
-
-        // Debug.Log($"group vertices: {group.vertices.Count}, triangles: {group.indices.Count}");
-        //     //vertices.AddRange(group.vertices);
-        //     uvs.AddRange(group.uvs);
-        //     indices.AddRange(group.indices);
-        //     vertices.AddRange(group.indices.Select(index => group.vertices[index]));
         }
         
         mesh.SetVertices(vertices);
-        mesh.SetTriangles(indices, 0);
         mesh.SetUVs(0, uvs);
+        mesh.SetTriangles(indices, 0);
+
         
         mesh.name = $"{goName}_Mesh";
         
@@ -345,10 +339,10 @@ private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
             clutTexture.name = clutTextureName;
             ctx.AddObjectToAsset(clutTextureName, clutTexture);
             
-            Material material = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            Material material = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
             material.name = $"{battleStageName}_Mat_{clutIndex}";
             material.SetTexture("_BaseMap", clutTexture);
-            material.SetFloat("_Smoothness", 0.0f);
+            //material.SetFloat("_Smoothness", 0.0f);
             material.SetFloat("_AlphaClip", 1.0f);
             material.SetFloat("_Cull", 0.0f);
             
