@@ -163,9 +163,9 @@ private Vector2 TweakUV(Tuple<byte, byte> UVbyte, int tPageOffset)
 
                 int tPagePixelOffset = TPage; //because 64px per TPage
                 
-                segment.uvs.Add(TweakUV(UV1, tPagePixelOffset));
                 segment.uvs.Add(TweakUV(UV2, tPagePixelOffset));
                 segment.uvs.Add(TweakUV(UV3, tPagePixelOffset));
+                segment.uvs.Add(TweakUV(UV1, tPagePixelOffset));
                 
                 segment.clutIds.Add(clutId);
 
